@@ -1,0 +1,20 @@
+# .gitignore 파일 내용
+# 가상환경 폴더 제외
+venv/
+env/
+.env
+
+# 파이썬 캐시 제외
+__pycache__/
+*.py[cod]
+
+# IDE 설정 파일 제외 (VSCode, Pycharm 등)
+.vscode/
+.idea/
+
+# 맥/윈도우 시스템 파일 제외
+.DS_Store
+Thumbs.db
+
+# (선택) 데이터셋이 너무 크거나 보안이 필요하다면 제외
+# data/
