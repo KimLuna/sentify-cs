@@ -60,7 +60,7 @@ The analysis confirms the success and necessity of our Hybrid design.
 
 The Confusion Matrix visually demonstrates the model's conservative bias towards the majority class.
 
-![Confusion Matrix](/home/work/EF2039_AI/termproject2/reports/confusion_matrix.png)
+![Confusion Matrix](reports/confusion_matrix.png)
 
 ## 4. Usage & Distribution
 
