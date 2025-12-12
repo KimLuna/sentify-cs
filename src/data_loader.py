@@ -8,87 +8,52 @@ from .config import DATA_FILE
 
 
 def load_raw_dataframe(file_path: Optional[Path] = None) -> pd.DataFrame:
-    """Load the raw chat dataset from disk.
-
-    The loader automatically handles CSV and Excel files.
-
-    Parameters
-    ----------
-    file_path: Optional[Path]
-        Optionally override the default dataset location. If omitted, `DATA_FILE` from `config.py` is used.
-
-    Returns
-    -------
-    pandas.DataFrame
-        The raw DataFrame loaded from the file.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the specified file does not exist.
-    """
+    """Load the raw DataFrame from the specified file path (CSV or Excel)."""
     path = file_path or DATA_FILE
     if not path.exists():
-        raise FileNotFoundError(
-            f"Dataset file not found: {path}. Please place your data file in the data directory"
-        )
+        raise FileNotFoundError(f"File not found: {path}")
 
-    # Determine loader based on extension
+    # Read Excel or CSV based on file extension
     ext = path.suffix.lower()
     if ext in {".xlsx", ".xls"}:
         df = pd.read_excel(path)
     else:
         df = pd.read_csv(path)
+
+    # Clean column names
+    df.columns = df.columns.str.strip()
     return df
 
 
 def extract_comment_and_rating(df: pd.DataFrame) -> pd.DataFrame:
-    """Return a DataFrame containing only the comment and rating columns.
+    """Extract 'Text' and 'Transferred Chat' columns for model training.
 
-    This helper simplifies downstream processing by selecting the
-    relevant columns and renaming them to canonical names.
-
-    Parameters
-    ----------
-    df: pandas.DataFrame
-        The DataFrame returned by `load_raw_dataframe`.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame with two columns: `comment` and `rating`. Rows
-        with missing or empty comments are dropped.
+    'Text' is renamed to 'comment' (input feature).
+    'Transferred Chat' is renamed to 'rating' (target label).
     """
-    # Some datasets may use different header names; handle common variations
-    comment_col_candidates = [
-        "Customer Comment",
-        "Text",
-        "CustomerComment",
-    ]
-    rating_col_candidates = [
-        "Customer Rating",
-        "Rating",
-        "CustomerRating",
-    ]
 
-    # Ensure comment and rating columns exist
-    comment_col = next((c for c in comment_col_candidates if c in df.columns), None)
-    rating_col = next((c for c in rating_col_candidates if c in df.columns), None)
+    # Define columns
+    text_col = "Text"
+    target_col = "Transferred Chat"
 
-    if comment_col is None or rating_col is None:
-        raise ValueError(
-            "Could not find the required comment and rating columns in the dataset."
-        )
+    # Check for required columns
+    if text_col not in df.columns or target_col not in df.columns:
+        raise ValueError(f"Required columns missing. Current columns: {df.columns.tolist()}")
 
-    # Select the relevant columns and rename them
-    subset = df[[comment_col, rating_col]].copy()
+    # Extract data and rename columns
+    subset = df[[text_col, target_col]].copy()
     subset.columns = ["comment", "rating"]
 
-    # Drop rows without comments
+    # Handle missing values and ensure comment is string
     subset = subset.dropna(subset=["comment"])
-
-    # Ensure 'comment' is of string type
     subset["comment"] = subset["comment"].astype(str)
 
-    # Optional: Further clean rating values (e.g., handle incorrect or missing ratings)
+    # Map target values: True -> 'transfer', False -> 'done'
+    # 'transfer' indicates the chat was escalated/transferred.
+    subset["rating"] = subset["rating"].apply(
+        lambda x: "transfer" if str(x).lower() == "true" else "done"
+    )
+
+    print(f"Data loaded successfully! (Target distribution):\n{subset['rating'].value_counts()}")
+
     return subset

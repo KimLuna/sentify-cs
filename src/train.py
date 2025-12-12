@@ -1,104 +1,81 @@
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
-from typing import Tuple
-
-import joblib
-import numpy as np
 import pandas as pd
+from pathlib import Path
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score
 
-from . import data_loader, preprocess, model
-from .config import (
-    TEST_SIZE,
-    RANDOM_STATE,
-    MAX_FEATURES,
-    MODEL_DIR,
-    REPORTS_DIR,
-    ensure_directories,
-)
+from . import data_loader, preprocess
+from .config import MODEL_DIR
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train sentiment classifier")
-    parser.add_argument(
-        "--max_features",
-        type=int,
-        default=MAX_FEATURES,
-        help="Maximum number of TF-IDF features to use",
-    )
-    parser.add_argument(
-        "--test_size",
-        type=float,
-        default=TEST_SIZE,
-        help="Fraction of data to reserve for testing",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=str(MODEL_DIR),
-        help="Directory to store the trained model and vectoriser",
-    )
-    return parser.parse_args()
-
+# Define paths for saving model artifacts and report
+MODEL_PATH = MODEL_DIR / "sentiment_model.joblib"
+VECTORISER_PATH = MODEL_DIR / "tfidf_vectoriser.joblib"
+REPORT_PATH = MODEL_DIR.parent / "classification_report.txt"
 
 def main() -> None:
-    args = parse_args()
-    ensure_directories()
-    model_output_dir = Path(args.output_dir)
-    model_output_dir.mkdir(parents=True, exist_ok=True)
+    """Main function to load data, train a classifier, and save artifacts."""
+    print("Starting training process (Target: Transferred Chat)")
+    print("Model: Random Forest")
 
-    # Load and preprocess data
+    # 1. Load data
     raw_df = data_loader.load_raw_dataframe()
     df = data_loader.extract_comment_and_rating(raw_df)
-    processed = preprocess.preprocess_dataframe(df)
-    if processed.empty:
-        raise ValueError("No data available after preprocessing. Check your rating thresholds.")
-    texts = processed["comment"].tolist()
-    labels = processed["label"].tolist()
 
-    # Split data into train and test sets
-    X_train_texts, X_test_texts, y_train, y_test = train_test_split(
-        texts,
-        labels,
-        test_size=args.test_size,
-        random_state=RANDOM_STATE,
-        stratify=labels,
+    # 2. Data validation
+    if df.empty:
+        raise ValueError("Data is empty after loading.")
+
+    print(f"Total training data samples: {len(df)}")
+
+    # 3. Text Preprocessing
+    print("Preprocessing text...")
+    # Clean comments and filter out rows where text became empty after cleaning
+    df['clean_text'] = df['comment'].apply(preprocess.clean_comment)
+    df = df[df['clean_text'].str.strip().astype(bool)]
+
+    # 4. Separate features (X) and target (y)
+    X_text = df['clean_text']
+    y = df['rating']  # Target labels: 'transfer' / 'done'
+
+    # 5. Split data into training and testing sets
+    X_train_text, X_test_text, y_train, y_test = train_test_split(
+        X_text, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Vectorise text using TF-IDF
-    vectoriser = TfidfVectorizer(max_features=args.max_features)
-    X_train = vectoriser.fit_transform(X_train_texts)
-    X_test = vectoriser.transform(X_test_texts)
+    # 6. Feature Vectorization (TF-IDF)
+    # Increased max_features to 7000
+    vectoriser = TfidfVectorizer(max_features=7000)
+    X_train = vectoriser.fit_transform(X_train_text)
+    X_test = vectoriser.transform(X_test_text)
 
-    # Train classifier
-    clf = model.train_classifier(X_train, np.array(y_train))
+    # 7. Model Training (Random Forest)
+    print("Training model... (This may take a moment)")
+    # n_jobs=-1 uses all available CPU cores for faster training
+    clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+    clf.fit(X_train, y_train)
 
-    # Evaluate on test set
+    # 8. Performance Evaluation
     y_pred = clf.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
-    print(f"Test accuracy: {acc:.3f}")
-    report = classification_report(y_test, y_pred, digits=4)
+    report = classification_report(y_test, y_pred)
+
+    print(f"\nTest Accuracy: {acc:.4f}")
+    print("Detailed Report:")
     print(report)
 
-    # Save model and vectoriser
-    model_path = model_output_dir / "sentiment_model.joblib"
-    vect_path = model_output_dir / "tfidf_vectoriser.joblib"
-    joblib.dump(clf, model_path)
-    joblib.dump(vectoriser, vect_path)
-    print(f"Model saved to {model_path}")
-    print(f"Vectoriser saved to {vect_path}")
-
-    # Save classification report to file
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    metrics_file = REPORTS_DIR / "classification_report.txt"
-    with metrics_file.open("w", encoding="utf-8") as f:
-        f.write(f"Accuracy: {acc:.4f}\n")
+    # 9. Save Model, Vectorizer, and Report
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(clf, MODEL_PATH)
+    joblib.dump(vectoriser, VECTORISER_PATH)
+    
+    with open(REPORT_PATH, "w") as f:
         f.write(report)
-    print(f"Classification report saved to {metrics_file}")
+
+    print(f"Model and vectorizer saved successfully.")
 
 if __name__ == "__main__":
     main()

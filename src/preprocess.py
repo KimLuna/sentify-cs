@@ -6,7 +6,12 @@ from typing import Iterable, List, Optional
 import pandas as pd
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-from .config import POSITIVE_THRESHOLD, NEGATIVE_THRESHOLD
+try:
+    # Import thresholds when run as a package
+    from .config import POSITIVE_THRESHOLD, NEGATIVE_THRESHOLD
+except ImportError:
+    # Import thresholds when run as a script (e.g., Streamlit demo)
+    from config import POSITIVE_THRESHOLD, NEGATIVE_THRESHOLD
 
 
 # Compile a regex pattern to remove punctuation and digits
@@ -14,70 +19,35 @@ _punct_num_pattern = re.compile(r"[^a-zA-Z\s]")
 
 
 def clean_comment(text: str, extra_stopwords: Optional[Iterable[str]] = None) -> str:
-    """Clean a single customer comment.
-
-    Steps performed:
-
-    1. Convert to lower case.
-    2. Remove punctuation, numbers and other non‑letter characters.
-    3. Collapse multiple whitespace characters into a single space.
-    4. Remove stop words.
-
-    Parameters
-    ----------
-    text: str
-        The raw comment text.
-    extra_stopwords: Iterable[str] | None
-        Additional stop words to remove. Can be useful for domain-specific words such as 'please', 'agent', etc.
-
-    Returns
-    -------
-    str
-        The cleaned comment.
+    """
+    Clean a single customer comment by lowercasing, removing punctuation/numbers, 
+    and filtering English and optional custom stop words.
     """
     if not isinstance(text, str):
         text = str(text)
+        
     # Lower case
     text = text.lower()
     # Remove punctuation and numbers
     text = _punct_num_pattern.sub(" ", text)
-    # Remove extra whitespace
+    # Tokenize and define stop words
     words = text.split()
     stopwords = set(ENGLISH_STOP_WORDS)
     if extra_stopwords:
         stopwords.update([w.lower() for w in extra_stopwords])
-    # Filter stop words
+        
+    # Filter stop words and rejoin
     cleaned_words: List[str] = [w for w in words if w not in stopwords]
     return " ".join(cleaned_words)
 
 
 def map_rating_to_label(rating: Optional[float | int | str | None]) -> Optional[str]:
-    """Map a numeric rating to a sentiment label.
-
-    Ratings greater than or equal to `POSITIVE_THRESHOLD` are mapped
-    to "positive". Ratings less than or equal to `NEGATIVE_THRESHOLD`
-    are mapped to "negative". Ratings between the two thresholds 
-    (exclusive) return `None`, indicating a neutral label. 
-    Neutral entries can be discarded or handled separately.
-
-    Parameters
-    ----------
-    rating: Optional[float | int | str | None]
-        The raw rating value from the dataset.
-
-    Returns
-    -------
-    str | None
-        `positive` if rating >= POSITIVE_THRESHOLD, `negative` if rating <= NEGATIVE_THRESHOLD, 
-        otherwise `None` for neutral.
     """
-    if rating is None:
+    Map a numeric rating to a label: "positive", "negative", or None (neutral/excluded).
+    Uses POSITIVE_THRESHOLD and NEGATIVE_THRESHOLD from config.
+    """
+    if rating is None or rating == "":
         return None
-
-    if isinstance(rating, str):
-        rating = rating.strip()
-        if rating == "":
-            return None
 
     try:
         rating_val = float(rating)
@@ -88,33 +58,23 @@ def map_rating_to_label(rating: Optional[float | int | str | None]) -> Optional[
         return "positive"
     if rating_val <= NEGATIVE_THRESHOLD:
         return "negative"
-    return None
+        
+    return None # Neutral
 
 
 def preprocess_dataframe(df: pd.DataFrame, extra_stopwords: Optional[Iterable[str]] = None) -> pd.DataFrame:
-    """Clean comments and map ratings to labels for the entire DataFrame.
-
-    Parameters
-    ----------
-    df: pandas.DataFrame
-        A DataFrame with columns `comment` and `rating`.
-    extra_stopwords: Iterable[str] | None
-        Additional stop words to remove during cleaning.
-
-    Returns
-    -------
-    pandas.DataFrame
-        DataFrame with three columns: `comment`, `rating` and `label`. 
-        Rows with neutral labels are dropped.
     """
-    # Use 'apply' for more efficient processing
+    Apply comment cleaning and rating-to-label mapping to the entire DataFrame.
+    Returns a DataFrame with `comment` and `label`, dropping neutral/empty rows.
+    """
+    # Map ratings to labels and drop neutral rows
     df['label'] = df['rating'].apply(map_rating_to_label)
-    df = df.dropna(subset=['label'])  # Remove rows with neutral labels
+    df = df.dropna(subset=['label'])
 
     # Clean the comments
     df['comment'] = df['comment'].apply(clean_comment, extra_stopwords=extra_stopwords)
     
-    # Drop empty comments
+    # Drop rows where comment is now empty
     df = df[df['comment'].str.strip() != '']
 
     return df[['comment', 'label']]

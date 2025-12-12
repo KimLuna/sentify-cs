@@ -21,44 +21,45 @@ from .config import (
     REPORTS_DIR,
     RANDOM_STATE,
     TEST_SIZE,
-    MAX_FEATURES,
     ensure_directories,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate sentiment classifier")
+    """Parse command-line arguments for evaluation settings."""
+    parser = argparse.ArgumentParser(description="Evaluate the classifier.")
     parser.add_argument(
         "--model_path",
         type=str,
         default=str(MODEL_DIR / "sentiment_model.joblib"),
-        help="Path to the trained model file",
+        help="Path to the trained model file.",
     )
     parser.add_argument(
         "--vectoriser_path",
         type=str,
         default=str(MODEL_DIR / "tfidf_vectoriser.joblib"),
-        help="Path to the saved TF-IDF vectoriser file",
+        help="Path to the saved TF-IDF vectoriser file.",
     )
     parser.add_argument(
         "--test_size",
         type=float,
         default=TEST_SIZE,
-        help="Fraction of data to reserve for testing",
+        help="Fraction of data reserved for testing.",
     )
     return parser.parse_args()
 
 
 def main() -> None:
+    """Main function to load model, evaluate, and save reports."""
     args = parse_args()
     ensure_directories()
 
-    # Load model and vectoriser
+    # Load trained artifacts
     model_path = Path(args.model_path)
     vectoriser_path = Path(args.vectoriser_path)
     if not model_path.exists() or not vectoriser_path.exists():
         raise FileNotFoundError(
-            f"Model or vectoriser files not found. Train the model first with `python -m src.train`."
+            "Model or vectoriser files not found. Train the model first."
         )
     clf = joblib.load(model_path)
     vectoriser = joblib.load(vectoriser_path)
@@ -68,11 +69,11 @@ def main() -> None:
     df = data_loader.extract_comment_and_rating(raw_df)
     processed = preprocess.preprocess_dataframe(df)
     if processed.empty:
-        raise ValueError("No data available after preprocessing. Check your rating thresholds.")
+        raise ValueError("No data available after preprocessing. Check configuration.")
     texts = processed["comment"].tolist()
     labels = processed["label"].tolist()
 
-    # Split into train/test for evaluation (using same seed)
+    # Split data for consistent evaluation
     _, X_test_texts, _, y_test = train_test_split(
         texts,
         labels,
@@ -81,36 +82,36 @@ def main() -> None:
         stratify=labels,
     )
 
-    # Vectorise test set
+    # Vectorize and predict
     X_test = vectoriser.transform(X_test_texts)
-    # Predict
     y_pred = clf.predict(X_test)
-    # Metrics
+
+    # Calculate metrics
     acc = accuracy_score(y_test, y_pred)
     report = classification_report(y_test, y_pred, digits=4)
     cm = confusion_matrix(y_test, y_pred, labels=["negative", "positive"])
 
-    # Save metrics to text file
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Save metrics report
     metrics_path = REPORTS_DIR / "evaluation_report.txt"
     with metrics_path.open("w", encoding="utf-8") as f:
         f.write(f"Accuracy: {acc:.4f}\n")
         f.write(report)
-    # Plot confusion matrix
+    
+    # Plot and save confusion matrix 
     plt.figure(figsize=(5, 4))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["negative", "positive"], yticklabels=["negative", "positive"])
     plt.title("Confusion Matrix")
-    plt.xlabel("Predicted")
-    plt.ylabel("True")
+    plt.xlabel("Predicted Label")
+    plt.ylabel("True Label")
     fig_path = REPORTS_DIR / "confusion_matrix.png"
     plt.savefig(fig_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"Evaluation report saved to {metrics_path}")
-    print(f"Confusion matrix saved to {fig_path}")
 
-    # Also print summary to console
+    # Print results
     print(f"Test accuracy: {acc:.3f}")
     print(report)
+    print(f"Evaluation report saved to {metrics_path}")
+    print(f"Confusion matrix saved to {fig_path}")
 
 if __name__ == "__main__":
     main()

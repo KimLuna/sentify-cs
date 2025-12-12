@@ -1,6 +1,5 @@
 scikit-learn==1.3.2
 openpyxl==3.1.2
-
 pandas
 numpy
 joblib
@@ -8,3 +7,4 @@ matplotlib
 seaborn
 rich
 pytest
+streamlit
